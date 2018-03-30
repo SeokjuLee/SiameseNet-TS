@@ -8,8 +8,6 @@ v1: dataset - GTSRB
 
 import argparse
 import os
-
-
 import torchvision
 import torchvision.datasets as dset
 import torchvision.transforms as transforms
@@ -281,11 +279,19 @@ def train(train_loader, net, criterion, optimizer, epoch):
         data_time.update(time.time() - end)
 
         output1, output2 = net(img0, img1)
-        optimizer.zero_grad()
+        
         loss_contrastive = criterion(output1,output2,label)
         losses.update(loss_contrastive.data[0], label.size(0))
+
+        optimizer.zero_grad()
         loss_contrastive.backward()
         optimizer.step()
+
+        # if epoch > 2 and i % args.print_freq and loss_contrastive.data[0] > 3 == 0:
+        #     ED = F.pairwise_distance(output1, output2)
+        #     imgVisCat = torch.cat((img0.data.cpu(), img1.data.cpu()),0)
+        #     imshow(torchvision.utils.make_grid(imgVisCat))
+        #     pdb.set_trace()
 
         batch_time.update(time.time() - end)
         end = time.time()
@@ -326,10 +332,6 @@ def test(test_loader, net, criterion, epoch):
                   'loss: {loss.val:.3f}({loss.avg:.3f})'.format(
                    i, len(test_loader),
                    loss=losses))
-
-        with open(os.path.join(save_path,args.log_full), 'a') as csvfile:
-            writer = csv.writer(csvfile, delimiter='\t')
-            writer.writerow([loss_contrastive.data[0]])
 
     print(' * loss: {loss.avg:.3f}\t'.format(loss=losses))
 
