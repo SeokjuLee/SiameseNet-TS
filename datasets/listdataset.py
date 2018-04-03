@@ -17,25 +17,41 @@ import random
 
 
 class ListDataset(data.Dataset):
-    def __init__(self, path_list, temp_list, transform=None, should_invert=False):
+    def __init__(self, path_list, temp_list, transform=None, should_invert=False, use_temp=False):
         self.path_list = path_list
         self.temp_list = temp_list
         self.transform = transform
         self.should_invert = should_invert
+        self.use_temp = use_temp
         # pdb.set_trace()
 
     def __getitem__(self, index):
         img0_list = self.path_list[index]
-        should_get_same_class = random.randint(0,1)     # 50% of images are in the same class
+
+        # 50% of images are in the same class
+        should_get_same_class = random.randint(0,1)     
+
+        # pos:neg = 1:nneg
+        nneg = 1
+        if random.randint(1,nneg+1) < nneg+1: 
+            should_get_same_class = 0
+        else:
+            should_get_same_class = 1
 
         if should_get_same_class:
             while True:
                 #keep looping till the same class image is found
-                img1_list = random.choice(self.temp_list) 
+                if self.use_temp:
+                    img1_list = random.choice(self.temp_list)
+                else:
+                    img1_list = random.choice(self.path_list)
                 if img0_list[1]==img1_list[1]:
                     break
         else:
-            img1_list = random.choice(self.temp_list)
+            if self.use_temp:
+                img1_list = random.choice(self.temp_list)
+            else:
+                img1_list = random.choice(self.path_list)
 
         img0 = Image.open(img0_list[0])
         img1 = Image.open(img1_list[0])

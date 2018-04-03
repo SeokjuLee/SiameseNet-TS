@@ -54,7 +54,7 @@ def make_tempset(tempfile):
     
     temp_list = sorted( os.listdir(tempfile) )
     for i in range(len(temp_list)):
-        output.append([os.path.join(tempfile, temp_list[i]), str(i)])
+        output.append([os.path.join(tempfile, temp_list[i]), str(i+1)])
 
     assert(len(output) > 0)
     random.shuffle(output)
@@ -62,7 +62,7 @@ def make_tempset(tempfile):
     return output
 
 
-def gtsrb_data(base, listfile_tr, listfile_tr_gt, listfile_te, listfile_te_gt, listfile_temp, transform=None, split=100, should_invert=False, use_temp=False):
+def tt100k_data(base, listfile_tr, listfile_tr_gt, listfile_te, listfile_te_gt, listfile_temp, transform=None, split=100, should_invert=False, use_temp=False):
     train_list = make_dataset(base, listfile_tr, listfile_tr_gt)
     test_list = make_dataset(base, listfile_te, listfile_te_gt, split)
     temp_list = make_tempset(listfile_temp)

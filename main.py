@@ -3,7 +3,18 @@ Seokju Lee, 2018.03.27
 Base codes from "https://github.com/harveyslash/Facial-Similarity-with-Siamese-Networks-in-Pytorch"
 
 v1: dataset - GTSRB
+v2: nneg setting
+v3: IdsiaNet
+v4: TT100K
 
+python main.py
+python main.py --evaluate --pretrained /media/rcv/SSD1/git/SiameseNet-TS/gtsrb_data/Mon-Apr-02-23:01/100epochs,b50,lr0.0005/model_best.pth.tar
+
+python main.py --dataset tt100k_data
+python main.py --evaluate --dataset tt100k_data --pretrained /media/rcv/SSD1/git/SiameseNet-TS/tt100k_data/Tue-Apr-03-16:25/100epochs,b50,lr0.0005/model_best.pth.tar
+
+
+ps aux | grep python
 '''
 
 import argparse
@@ -24,6 +35,7 @@ import torch.nn as nn
 from torch import optim
 import torch.nn.functional as F
 from model import SiameseNetwork
+from model import IdsiaNet
 from loss import ContrastiveLoss
 import data_transform
 import datetime
@@ -67,17 +79,31 @@ parser.add_argument('--data-parallel', default=None,
                     help='Use nn.DataParallel() model')
 parser.add_argument('--print-freq', '-p', default=100, type=int,
                     metavar='N', help='print frequency (default: 10)')
+parser.add_argument('--use-temp', default=False, type=bool,
+                    help='train with template anchor')
 
 
 
 
+### GTSRB
+# class Config():
+#     base_path = "/media/rcv/SSD1/Logo_oneshot/GTSRB"
+#     tr_im_path = "/media/rcv/SSD1/Logo_oneshot/GTSRB/Experiment02-22-43/train_impaths.txt"
+#     tr_gt_path = "/media/rcv/SSD1/Logo_oneshot/GTSRB/Experiment02-22-43/train_imclasses.txt"
+#     te_im_path = "/media/rcv/SSD1/Logo_oneshot/GTSRB/Experiment02-22-43/test_impaths.txt"
+#     te_gt_path = "/media/rcv/SSD1/Logo_oneshot/GTSRB/Experiment02-22-43/test_imclasses.txt"
+#     tmp_path = "/media/rcv/SSD1/Logo_oneshot/GTSRB/GTSRB_template_ordered"
+
+
+### TT100K
 class Config():
-    base_path = "/media/rcv/SSD1/Logo_oneshot/GTSRB"
-    tr_im_path = "/media/rcv/SSD1/Logo_oneshot/GTSRB/Experiment02-22-43/train_impaths.txt"
-    tr_gt_path = "/media/rcv/SSD1/Logo_oneshot/GTSRB/Experiment02-22-43/train_imclasses.txt"
-    te_im_path = "/media/rcv/SSD1/Logo_oneshot/GTSRB/Experiment02-22-43/test_impaths.txt"
-    te_gt_path = "/media/rcv/SSD1/Logo_oneshot/GTSRB/Experiment02-22-43/test_imclasses.txt"
-    tmp_path = "/media/rcv/SSD1/Logo_oneshot/GTSRB/GTSRB_template_ordered"
+    base_path = "/media/rcv/SSD1/Logo_oneshot/TT100K"
+    tr_im_path = "/media/rcv/SSD1/Logo_oneshot/TT100K/exp02_exist_classes_only/train_impaths.txt"
+    tr_gt_path = "/media/rcv/SSD1/Logo_oneshot/TT100K/exp02_exist_classes_only/train_imclasses.txt"
+    te_im_path = "/media/rcv/SSD1/Logo_oneshot/TT100K/exp02_exist_classes_only/val_impaths.txt"
+    te_gt_path = "/media/rcv/SSD1/Logo_oneshot/TT100K/exp02_exist_classes_only/val_imclasses.txt"
+    tmp_path = "/media/rcv/SSD1/Logo_oneshot/TT100K/TT100K_template_ordered"
+
 
 
 BEST_TEST_LOSS = -1
@@ -110,8 +136,13 @@ def main():
     args = parser.parse_args()
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
+    # input_transform = transforms.Compose([
+    #             data_transform.PILScale((100,100)),
+    #             transforms.ToTensor(),
+    #             # normalize
+    #     ])
     input_transform = transforms.Compose([
-                data_transform.PILScale((100,100)),
+                data_transform.PILScale((48,48)),
                 transforms.ToTensor(),
                 # normalize
         ])
@@ -126,7 +157,8 @@ def main():
         Config.tmp_path,
         transform=input_transform,
         split=100,
-        should_invert=False
+        should_invert=False,
+        use_temp=args.use_temp
     )
 
     print('{} samples found, {} train samples and {} test samples '.format(len(test_set)+len(train_set),
@@ -134,7 +166,7 @@ def main():
                                                                            len(test_set)))
 
 
-    ### Data visualization
+    ### Data visualization #####################
     # vis_dataloader = DataLoader(train_set,
     #                         shuffle=True,
     #                         num_workers=args.workers,
@@ -145,6 +177,8 @@ def main():
     # imshow(torchvision.utils.make_grid(concatenated))
     # print(example_batch[2].numpy())
     # pdb.set_trace()
+    #############################################
+
 
     train_loader = DataLoader(train_set,
                         shuffle=True,
@@ -155,7 +189,8 @@ def main():
                         num_workers=args.workers, 
                         batch_size=args.batch_size)
 
-    net = SiameseNetwork().cuda()
+    # net = SiameseNetwork().cuda()
+    net = IdsiaNet().cuda()
 
     if args.pretrained:
         print("=> Use pre-trained model")
@@ -174,23 +209,24 @@ def main():
 
 
     if args.evaluate:
-        eval(test_set, net, input_transform)
+        eval(args.dataset, test_set, net, input_transform)
 
 
-    ### Visualize testset with pretrained model 
-    # test_dataloader = DataLoader(test_set, shuffle=True, num_workers=args.workers, batch_size=1)
-    # dataiter = iter(test_dataloader)
-    # x0, _, _ = next(dataiter)
+    ### Visualize testset with pretrained model #####################
+    # while True:
+    #     test_dataloader = DataLoader(test_set, shuffle=True, num_workers=args.workers, batch_size=1)
+    #     dataiter = iter(test_dataloader)
+    #     x0, _, _, _ = next(dataiter)
 
-    # for i in range(10):
-    #     _, x1, label2, _ = next(dataiter)
-    #     concatenated = torch.cat((x0,x1),0)
-        
-    #     output1,output2 = net(Variable(x0).cuda(),Variable(x1).cuda())
-    #     euclidean_distance = F.pairwise_distance(output1, output2)
-    #     imshow(torchvision.utils.make_grid(concatenated),'Dissimilarity: {:.2f}'.format(euclidean_distance.cpu().data.numpy()[0][0]))
-    # pdb.set_trace()
-
+    #     for i in range(1):
+    #         _, x1, label2, _ = next(dataiter)
+    #         concatenated = torch.cat((x0,x1),0)
+            
+    #         output1,output2 = net(Variable(x0).cuda(),Variable(x1).cuda())
+    #         euclidean_distance = F.pairwise_distance(output1, output2)
+    #         imshow(torchvision.utils.make_grid(concatenated),'Dissimilarity: {:.2f}'.format(euclidean_distance.cpu().data.numpy()[0][0]))
+    #     pdb.set_trace()
+    ##################################################################
 
 
     save_path = '{}epochs,b{},lr{}'.format(
@@ -279,7 +315,7 @@ def train(train_loader, net, criterion, optimizer, epoch):
         data_time.update(time.time() - end)
 
         output1, output2 = net(img0, img1)
-        
+        # pdb.set_trace()
         loss_contrastive = criterion(output1,output2,label)
         losses.update(loss_contrastive.data[0], label.size(0))
 
@@ -338,43 +374,9 @@ def test(test_loader, net, criterion, epoch):
     return losses.avg
 
 
-# def eval(test_set, net, input_transform):
-#     net.eval()
-
-#     test_loader = DataLoader(test_set, 
-#                         shuffle=False, 
-#                         num_workers=args.workers, 
-#                         batch_size=1)
-
-#     tmp_list = sorted( os.listdir(Config.tmp_path) )
-#     tmp = []
-#     for i in range(len(tmp_list)):
-#         img = Image.open( os.path.join(Config.tmp_path, tmp_list[i]) )
-#         img = Variable(input_transform(img)).cuda()
-#         tmp.append(img)
-
-    
-#     result_table = np.zeros( (len(test_loader), 2) )
-#     bar = progressbar.ProgressBar(max_value=len(test_loader))
-#     for i, data in enumerate(test_loader, 0):
-#         # if i>10: break;
-#         bar.update(i)
-#         euclidean_distance = np.zeros(len(tmp_list))
-#         img0, img1, label, cls0 = data
-#         img0, img1, label, cls0 = Variable(img0).cuda(), Variable(img1).cuda(), Variable(label).cuda(), Variable(cls0).cuda()
-
-#         for tt in range(len(tmp_list)):
-#             output1, output2 = net(img0, tmp[tt].unsqueeze(0))
-#             euclidean_distance[tt] = F.pairwise_distance(output1, output2).cpu().data.numpy()[0][0]
-#         # pdb.set_trace()
-
-#         result_table[i, 0] = label.cpu().data.numpy()[0][0]
-#         result_table[i, 1] = cls0.cpu().data.numpy()[0][0]
-#     pdb.set_trace()
 
 
-
-def eval(test_set, net, input_transform):
+def eval(db, test_set, net, input_transform):
     net.eval()
 
     test_loader = DataLoader(test_set, 
@@ -403,30 +405,55 @@ def eval(test_set, net, input_transform):
                 ED[bs][tt] = F.pairwise_distance(output1[bs].unsqueeze(0), output2[bs].unsqueeze(0)).cpu().data.numpy()[0][0]
 
         for bs in range(img0.size(0)):
-            result_table.append([int(cls0.cpu().data.numpy()[bs][0]), ED[bs].argmin()])
+            if db == 'gtsrb_data':
+                result_table.append([int(cls0.cpu().data.numpy()[bs][0]), ED[bs].argmin()])
+            elif db == 'tt100k_data':
+                result_table.append([int(cls0.cpu().data.numpy()[bs][0]), ED[bs].argmin()+1])
 
     results = np.array(result_table)
 
-    seenList = [1,2,3,4,5,7,8,9,10,11,12,13,14,15,17,18,25,26,31,33,35,38]
-    unseenList = [0,6,16,19,20,21,22,23,24,27,28,29,30,32,34,36,37,39,40,41,42]
-    numCorrSeen = 0
-    numWrongSeen = 0
-    numCorrUnseen = 0
-    numWrongUnseen = 0
-    for i in range(results.shape[0]): 
-        if (results[i,0] in seenList) and (results[i,0] == results[i,1]): 
-            numCorrSeen += 1
-        elif (results[i,0] in seenList) and (results[i,0] != results[i,1]): 
-            numWrongSeen += 1
-        elif (results[i,0] in unseenList) and (results[i,0] == results[i,1]):
-            numCorrUnseen += 1
-        elif (results[i,0] in unseenList) and (results[i,0]!= results[i,1]):
-            numWrongUnseen += 1
 
+    if db == 'gtsrb_data':
+        seenList = [1,2,3,4,5,7,8,9,10,11,12,13,14,15,17,18,25,26,31,33,35,38]
+        unseenList = [0,6,16,19,20,21,22,23,24,27,28,29,30,32,34,36,37,39,40,41,42]
+        numCorrSeen = 0
+        numWrongSeen = 0
+        numCorrUnseen = 0
+        numWrongUnseen = 0
+        for i in range(results.shape[0]): 
+            if (results[i,0] in seenList) and (results[i,0] == results[i,1]): 
+                numCorrSeen += 1
+            elif (results[i,0] in seenList) and (results[i,0] != results[i,1]): 
+                numWrongSeen += 1
+            elif (results[i,0] in unseenList) and (results[i,0] == results[i,1]):
+                numCorrUnseen += 1
+            elif (results[i,0] in unseenList) and (results[i,0]!= results[i,1]):
+                numWrongUnseen += 1
+        scoreSeen = float(numCorrSeen) / float(numCorrSeen + numWrongSeen)
+        scoreUnseen = float(numCorrUnseen) / float(numCorrUnseen + numWrongUnseen)
+        print('seen:', scoreSeen, 'unseen:', scoreUnseen)
+        pdb.set_trace()
 
-    scoreSeen = float(numCorrSeen) / float(numCorrSeen + numWrongSeen)
-    scoreUnseen = float(numCorrUnseen) / float(numCorrUnseen + numWrongUnseen)
-    pdb.set_trace()
+    elif db == 'tt100k_data':
+        seenList = range(1, 25)
+        unseenList = range(25, 35)
+        numCorrSeen = 0
+        numWrongSeen = 0
+        numCorrUnseen = 0
+        numWrongUnseen = 0
+        for i in range(results.shape[0]): 
+            if (results[i,0] in seenList) and (results[i,0] == results[i,1]): 
+                numCorrSeen += 1
+            elif (results[i,0] in seenList) and (results[i,0] != results[i,1]): 
+                numWrongSeen += 1
+            elif (results[i,0] in unseenList) and (results[i,0] == results[i,1]):
+                numCorrUnseen += 1
+            elif (results[i,0] in unseenList) and (results[i,0]!= results[i,1]):
+                numWrongUnseen += 1
+        scoreSeen = float(numCorrSeen) / float(numCorrSeen + numWrongSeen)
+        scoreUnseen = float(numCorrUnseen) / float(numCorrUnseen + numWrongUnseen)
+        print('seen:', scoreSeen, 'unseen:', scoreUnseen)
+        pdb.set_trace()
 
 
 
